@@ -23,6 +23,8 @@ val project = Project(
       "com.typesafe.akka" %% "akka-cluster-metrics" % akkaVersion,
       "com.typesafe.akka" %% "akka-cluster-tools" % akkaVersion,
       "com.typesafe.akka" %% "akka-multi-node-testkit" % akkaVersion,
+      "com.twitter" %% "util-zk" % "18.6.0",
+      "com.twitter" %% "util-collection" % "18.6.0",
       "org.scalatest" %% "scalatest" % "3.0.5" % "test",
       "io.kamon" % "sigar-loader" % "1.6.6-rev002",
       "com.github.pathikrit" %% "better-files-akka" % "3.5.0",
