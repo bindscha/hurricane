@@ -6,6 +6,8 @@ import akka.serialization._
 import ch.epfl.labos.hurricane.Config
 import ch.epfl.labos.hurricane.common._
 
+import io.jvm.uuid._
+
 
 object WireSerializer {
   val COMMAND_LENGTH = 4
@@ -22,6 +24,7 @@ object WireSerializer {
   val TRUNC_COMMAND = "TRUN"
   val REWIND_COMMAND = "RWND"
   val PROGRESS_COMMAND = "PROG"
+  val REPLAY_COMMAND = "RPLA"
 
   val FILLED_RESPONSE = "FLLD"
   val ACK_RESPONSE = "ACK!"
@@ -44,46 +47,60 @@ class WireSerializer extends Serializer {
 
   // "toBinary" serializes the given object to an Array of Bytes
   def toBinary(obj: AnyRef): Array[Byte] = obj match {
-    case Create(bag) =>
+    case Create(fingerprint, bag) =>
       val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH))
       buf.put(CREATE_COMMAND.getBytes)
+      buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
       buf.array
-    case Drain(bag, chunk) =>
+    case Drain(fingerprint, bag, chunk) =>
       chunk.cmd(DRAIN_COMMAND)
       chunk.bag(bag)
+      // XXX: not fingerprinting chunk
       chunk.array
-    case Fill(bag, count) =>
+    case Fill(fingerprint, bag, count) =>
       val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH + INT_LENGTH))
       buf.put(FILL_COMMAND.getBytes)
+      buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
       buf.putInt(COMMAND_LENGTH + ID_LENGTH, count)
       buf.array
-    case SeekAndFill(bag, offset, count) =>
+    case SeekAndFill(fingerprint, bag, offset, count) =>
       val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH + INT_LENGTH + INT_LENGTH))
       buf.put(FILL_COMMAND.getBytes)
+      buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
       buf.putInt(COMMAND_LENGTH + ID_LENGTH, offset)
       buf.putInt(COMMAND_LENGTH + ID_LENGTH + INT_LENGTH, count)
       buf.array
-    case Flush(bag) =>
+    case Flush(fingerprint, bag) =>
       val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH))
       buf.put(FLUSH_COMMAND.getBytes)
+      buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
       buf.array
-    case Trunc(bag) =>
+    case Trunc(fingerprint, bag) =>
       val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH))
       buf.put(TRUNC_COMMAND.getBytes)
+      buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
       buf.array
-    case Rewind(bag) =>
+    case Rewind(fingerprint, bag) =>
       val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH))
       buf.put(REWIND_COMMAND.getBytes)
+      buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
       buf.array
-    case Progress(bag) =>
+    case Progress(fingerprint, bag) =>
       val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH))
       buf.put(PROGRESS_COMMAND.getBytes)
+      buf.put(fingerprint.getBytes)
+      buf.put(bag.id.getBytes)
+      buf.array
+    case Replay(fingerprint, bag) =>
+      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH + ID_LENGTH))
+      buf.put(REPLAY_COMMAND.getBytes)
+      buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
       buf.array
 
@@ -113,7 +130,7 @@ class WireSerializer extends Serializer {
     if(bytes.length >= Config.HurricaneConfig.BackendConfig.DataConfig.chunkSize) {
       val chunk = Chunk.wrap(bytes)
       chunk.cmd match {
-        case DRAIN_COMMAND => Drain(chunk.bag, chunk)
+        case DRAIN_COMMAND => Drain(UUID(0, 0).toString, chunk.bag, chunk)
         case FILLED_RESPONSE => Filled(chunk)
         case other => throw new RuntimeException("Unknown large message received! " + other)
       }
@@ -123,38 +140,58 @@ class WireSerializer extends Serializer {
       buf.get(cmd)
       new String(cmd) match {
         case CREATE_COMMAND =>
+          val fingerprintBytes = new Array[Byte](ID_LENGTH)
+          buf.get(fingerprintBytes)
           val bagBytes = new Array[Byte](ID_LENGTH)
           buf.get(bagBytes)
-          Create(Bag(new String(bagBytes).trim))
+          Create(new String(fingerprintBytes).trim, Bag(new String(bagBytes).trim))
         case FILL_COMMAND =>
+          val fingerprintBytes = new Array[Byte](ID_LENGTH)
+          buf.get(fingerprintBytes)
           val bagBytes = new Array[Byte](ID_LENGTH)
           buf.get(bagBytes)
           val count = buf.getInt(COMMAND_LENGTH + ID_LENGTH)
-          Fill(Bag(new String(bagBytes).trim), count)
+          Fill(new String(fingerprintBytes).trim, Bag(new String(bagBytes).trim), count)
         case SEEK_AND_FILL_COMMAND =>
+          val fingerprintBytes = new Array[Byte](ID_LENGTH)
+          buf.get(fingerprintBytes)
           val bagBytes = new Array[Byte](ID_LENGTH)
           buf.get(bagBytes)
           val offset = buf.getInt(COMMAND_LENGTH + ID_LENGTH)
           val count = buf.getInt(COMMAND_LENGTH + ID_LENGTH + INT_LENGTH)
-          SeekAndFill(Bag(new String(bagBytes).trim), offset, count)
+          SeekAndFill(new String(fingerprintBytes).trim, Bag(new String(bagBytes).trim), offset, count)
         case FLUSH_COMMAND =>
+          val fingerprintBytes = new Array[Byte](ID_LENGTH)
+          buf.get(fingerprintBytes)
           val bagBytes = new Array[Byte](ID_LENGTH)
           buf.get(bagBytes)
-          Flush(Bag(new String(bagBytes).trim))
+          Flush(new String(fingerprintBytes).trim, Bag(new String(bagBytes).trim))
         case TRUNC_COMMAND =>
+          val fingerprintBytes = new Array[Byte](ID_LENGTH)
+          buf.get(fingerprintBytes)
           val bagBytes = new Array[Byte](ID_LENGTH)
           buf.get(bagBytes)
-          Trunc(Bag(new String(bagBytes).trim))
+          Trunc(new String(fingerprintBytes).trim, Bag(new String(bagBytes).trim))
         case REWIND_COMMAND =>
+          val fingerprintBytes = new Array[Byte](ID_LENGTH)
+          buf.get(fingerprintBytes)
           val bagBytes = new Array[Byte](ID_LENGTH)
           buf.get(bagBytes)
-          Rewind(Bag(new String(bagBytes).trim))
+          Rewind(new String(fingerprintBytes).trim, Bag(new String(bagBytes).trim))
         case PROGRESS_COMMAND =>
+          val fingerprintBytes = new Array[Byte](ID_LENGTH)
+          buf.get(fingerprintBytes)
           val bagBytes = new Array[Byte](ID_LENGTH)
           buf.get(bagBytes)
-          Progress(Bag(new String(bagBytes).trim))
+          Progress(new String(fingerprintBytes).trim, Bag(new String(bagBytes).trim))
         case PROGRESS_RESPONSE =>
           ProgressReport(buf.getDouble(COMMAND_LENGTH), buf.getLong(COMMAND_LENGTH + DOUBLE_LENGTH))
+        case REPLAY_COMMAND =>
+          val fingerprintBytes = new Array[Byte](ID_LENGTH)
+          buf.get(fingerprintBytes)
+          val bagBytes = new Array[Byte](ID_LENGTH)
+          buf.get(bagBytes)
+          Replay(new String(fingerprintBytes).trim, Bag(new String(bagBytes).trim))
 
         case ACK_RESPONSE => Ack
         case NACK_RESPONSE => Nack

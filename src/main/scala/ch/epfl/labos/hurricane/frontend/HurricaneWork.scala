@@ -84,6 +84,8 @@ class HurricaneRewind(bag: Bag) extends HurricaneWork {
 
   val backend = Config.HurricaneConfig.BackendConfig.NodesConfig.backendRefs
 
+  val fingerprint = java.util.UUID.nameUUIDFromBytes(Config.HurricaneConfig.FrontendConfig.NodesConfig.localNode.toString.getBytes).toString
+
   val ready = Array.fill(backend.size)(false)
 
   var timer: Option[Cancellable] = None
@@ -107,7 +109,7 @@ class HurricaneRewind(bag: Bag) extends HurricaneWork {
       ready.zipWithIndex filter (_._1 == false) foreach { p =>
         val id = p._2
         val me = self
-        (backend(id) ? Rewind(bag)) map { case Ack => me ! Acked(id) }
+        (backend(id) ? Rewind(fingerprint, bag)) map { case Ack => me ! Acked(id) }
       }
   }
 
@@ -151,6 +153,8 @@ class HurricaneTrunc(bag: Bag) extends HurricaneWork {
 
   val backend = Config.HurricaneConfig.BackendConfig.NodesConfig.backendRefs
 
+  val fingerprint = java.util.UUID.nameUUIDFromBytes(Config.HurricaneConfig.FrontendConfig.NodesConfig.localNode.toString.getBytes).toString
+
   val ready = Array.fill(backend.size)(false)
 
   var timer: Option[Cancellable] = None
@@ -174,7 +178,7 @@ class HurricaneTrunc(bag: Bag) extends HurricaneWork {
       ready.zipWithIndex filter (_._1 == false) foreach { p =>
         val id = p._2
         val me = self
-        (backend(id) ? Trunc(bag)) map { case Ack => me ! Acked(id) }
+        (backend(id) ? Trunc(fingerprint, bag)) map { case Ack => me ! Acked(id) }
       }
   }
 

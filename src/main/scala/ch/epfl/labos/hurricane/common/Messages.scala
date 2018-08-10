@@ -6,23 +6,26 @@ sealed trait HurricaneMessage
 
 sealed trait Command extends HurricaneMessage {
   def bag: Bag
+  def fingerprint: FingerPrint
 }
 
-case class Create(bag: Bag) extends Command
+case class Create(fingerprint: FingerPrint, bag: Bag) extends Command
 
-case class Fill(bag: Bag, count: Int = 4 * 1024 * 1024) extends Command
+case class Fill(fingerprint: FingerPrint, bag: Bag, count: Int = 4 * 1024 * 1024) extends Command
 
-case class SeekAndFill(bag: Bag, offset: Int, count: Int = 4 * 1024 * 1024) extends Command
+case class SeekAndFill(fingerprint: FingerPrint, bag: Bag, offset: Int, count: Int = 4 * 1024 * 1024) extends Command
 
-case class Drain(bag: Bag, chunk: Chunk) extends Command
+case class Drain(fingerprint: FingerPrint, bag: Bag, chunk: Chunk) extends Command
 
-case class Rewind(bag: Bag) extends Command
+case class Rewind(fingerprint: FingerPrint, bag: Bag) extends Command
 
-case class Trunc(bag: Bag) extends Command
+case class Trunc(fingerprint: FingerPrint, bag: Bag) extends Command
 
-case class Flush(bag: Bag) extends Command
+case class Flush(fingerprint: FingerPrint, bag: Bag) extends Command
 
-case class Progress(bag: Bag) extends Command
+case class Progress(fingerprint: FingerPrint, bag: Bag) extends Command
+
+case class Replay(fingerprint: FingerPrint, bag: Bag) extends Command
 
 sealed trait Response extends HurricaneMessage
 

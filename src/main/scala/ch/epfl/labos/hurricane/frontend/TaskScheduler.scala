@@ -34,6 +34,8 @@ class TaskScheduler(app: HurricaneApplication, cloningStrategy: CloningStrategy 
 
   implicit val timeout = Timeout(2.seconds)
 
+  val fingerprint = java.util.UUID.nameUUIDFromBytes("master".getBytes).toString
+
   var timer: Option[Cancellable] = None
   var worker: Option[ActorRef] = None
   var currentBlueprint: Option[Blueprint] = None
@@ -72,7 +74,7 @@ class TaskScheduler(app: HurricaneApplication, cloningStrategy: CloningStrategy 
         if(lastOverload == 0) {
           lastOverload = System.currentTimeMillis
         } else if(System.currentTimeMillis - lastOverload > Config.HurricaneConfig.FrontendConfig.cloningTime.toMillis) {
-          currentBlueprint flatMap (_.inputs.headOption) foreach (bag => cyclic.next ! Progress(bag))
+          currentBlueprint flatMap (_.inputs.headOption) foreach (bag => cyclic.next ! Progress(fingerprint, bag))
         }
       } else {
         lastOverload = 0

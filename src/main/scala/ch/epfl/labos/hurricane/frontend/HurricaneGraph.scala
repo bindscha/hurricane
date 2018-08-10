@@ -122,6 +122,8 @@ class Filler(bag: Bag, completionPromise: Option[Promise[Done]] = None) extends 
       case Config.HurricaneConfig.FrontendConfig.Spreading => Cyclic[ActorRef](7 * bag.id.hashCode + 13 * Config.HurricaneConfig.me, Config.HurricaneConfig.BackendConfig.NodesConfig.backendRefs)
     }
 
+  val fingerprint = java.util.UUID.nameUUIDFromBytes(Config.HurricaneConfig.FrontendConfig.NodesConfig.localNode.toString.getBytes).toString
+
   val done = MMap(cyclic.permutation.map(_ -> false) : _*)
 
   var buffer = SortedMap.empty[ActorCounter.Id, Option[Chunk]]
@@ -204,7 +206,7 @@ class Filler(bag: Bag, completionPromise: Option[Promise[Done]] = None) extends 
     val me = self
     val target = cyclic.next
     pending += 1
-    (target ? Fill(bag)) onComplete {
+    (target ? Fill(fingerprint, bag)) onComplete {
       case Success(Filled(chunk)) => me ! Acked(id, chunk)
       case Success(EOF) => me ! Nacked(id, target)
       case _ => me ! Retry(id)
@@ -236,6 +238,8 @@ class Drainer(bag: Bag, completionPromise: Option[Promise[Done]] = None) extends
       case Config.HurricaneConfig.FrontendConfig.Spreading => Cyclic[ActorRef](7 * bag.id.hashCode + 13 * Config.HurricaneConfig.me, Config.HurricaneConfig.BackendConfig.NodesConfig.backendRefs)
     }
 
+  val fingerprint = java.util.UUID.nameUUIDFromBytes(Config.HurricaneConfig.FrontendConfig.NodesConfig.localNode.toString.getBytes).toString
+
   var queue = Map.empty[ActorCounter.Id, Chunk]
 
   override val requestStrategy =
@@ -258,7 +262,7 @@ class Drainer(bag: Bag, completionPromise: Option[Promise[Done]] = None) extends
   def close() = {
     log.info("Flushing bag " + bag.id)
     val me = self
-    Future.foldLeft(cyclic.permutation.map(_ ? Flush(bag)))(Future.unit)((a,b) => a) onComplete { _ =>
+    Future.foldLeft(cyclic.permutation.map(_ ? Flush(fingerprint, bag)))(Future.unit)((a,b) => a) onComplete { _ =>
       completionPromise foreach { _.success(Done) }
       me ! PoisonPill
     }
@@ -292,7 +296,7 @@ class Drainer(bag: Bag, completionPromise: Option[Promise[Done]] = None) extends
   def drainChunk(id: ActorCounter.Id, chunk: Chunk): Unit = {
     val me = self
     val target = cyclic.next
-    (target ? Drain(bag, chunk)) onComplete {
+    (target ? Drain(fingerprint, bag, chunk)) onComplete {
       case Success(Ack) => me ! Acked(id)
       case _ => me ! Retry(id)
     }

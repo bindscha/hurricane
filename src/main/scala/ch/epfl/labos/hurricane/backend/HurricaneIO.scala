@@ -71,9 +71,9 @@ class HurricaneIO(bag: Bag, root: File = File(Config.HurricaneConfig.BackendConf
   private var inout = new RandomAccessFile((root / bag.id).toJava, "rw")
 
   def receive = {
-    case Create(file) =>
+    case Create(fingerprint, file) =>
       // do nothing
-    case Fill(file, count) =>
+    case Fill(fingerprint, file, count) =>
       val buffer = ChunkPool.allocate()
       val read = withStats(Read) {
         inout.read(buffer.array, 0, Config.HurricaneConfig.BackendConfig.DataConfig.chunkSize)
@@ -84,7 +84,7 @@ class HurricaneIO(bag: Bag, root: File = File(Config.HurricaneConfig.BackendConf
       } else {
         sender ! EOF
       }
-    case SeekAndFill(file, offset, count) =>
+    case SeekAndFill(fingerprint, file, offset, count) =>
       val buffer = ChunkPool.allocate()
       val fp = inout.getFilePointer
       val read = withStats(Read) {
@@ -99,29 +99,29 @@ class HurricaneIO(bag: Bag, root: File = File(Config.HurricaneConfig.BackendConf
       } else {
         sender ! EOF
       }
-    case Drain(file, data) =>
+    case Drain(fingerprint, file, data) =>
       withStats(Write) {
         inout.write(data.array, 0, data.chunkSize)
       }
       sender ! Ack
-    case Rewind(file) =>
+    case Rewind(fingerprint, file) =>
       withStats(Noop) {
         inout.seek(0L)
       }
       sender ! Ack
-    case Trunc(file) =>
+    case Trunc(fingerprint, file) =>
       withStats(Noop) {
         inout.close()
         (root / bag.id).delete(true)
         inout = new RandomAccessFile((root / bag.id).toJava, "rw")
       }
       sender ! Ack
-    case Flush(file) =>
+    case Flush(fingerprint, file) =>
       withStats(Noop) {
         inout.getFD.sync()
       }
       sender ! Ack
-    case Progress(file) =>
+    case Progress(fingerprint, file) =>
       val done = if(inout.length == 0) 1.0 else inout.getFilePointer.toDouble / inout.length.toDouble
       sender ! ProgressReport(done, inout.length)
   }
@@ -152,16 +152,16 @@ class HurricaneDIO(bag: Bag, root: File = File(Config.HurricaneConfig.BackendCon
   // XXX: read is a problem if it does not have exactly the right amount (e.g., last chunk of file)
 
   def receive = {
-    case Create(file) =>
+    case Create(fingerprint, file) =>
     // do nothing
-    case Fill(file, count) =>
+    case Fill(fingerprint, file, count) =>
       val buffer = ChunkPool.allocate()
       withStats(Read) {
         inout.read(buffer.array, 0, Config.HurricaneConfig.BackendConfig.DataConfig.chunkSize)
         buffer.array.length
       }
       sender ! Filled(buffer)
-    case SeekAndFill(file, offset, count) =>
+    case SeekAndFill(fingerprint, file, offset, count) =>
       val buffer = ChunkPool.allocate()
       val fp = inout.getFilePointer
       withStats(Read) {
@@ -171,27 +171,27 @@ class HurricaneDIO(bag: Bag, root: File = File(Config.HurricaneConfig.BackendCon
         buffer.array.length
       }
       sender ! Filled(buffer)
-    case Drain(file, data) =>
+    case Drain(fingerprint, file, data) =>
       withStats(Write) {
         inout.write(data.array, 0, data.chunkSize)
         Config.HurricaneConfig.BackendConfig.DataConfig.chunkSize
       }
       sender ! Ack
-    case Rewind(file) =>
+    case Rewind(fingerprint, file) =>
       withStats(Noop) {
         inout.seek(0L)
       }
       sender ! Ack
-    case Trunc(file) =>
+    case Trunc(fingerprint, file) =>
       withStats(Noop) {
         inout.close()
         (root / bag.id).delete(true)
         inout = new DirectRandomAccessFile((root / bag.id).toJava, "rw", 4 * 1024 * 1024)
       }
       sender ! Ack
-    case Flush(file) => // no need to flush, but we still ack it
+    case Flush(fingerprint, file) => // no need to flush, but we still ack it
       sender ! Ack
-    case Progress(file) =>
+    case Progress(fingerprint, file) =>
       val done = if(inout.length == 0) 1.0 else inout.getFilePointer.toDouble / inout.length.toDouble
       sender ! ProgressReport(done, inout.length)
   }
