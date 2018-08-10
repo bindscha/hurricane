@@ -4,6 +4,7 @@ import akka.actor._
 import akka.pattern._
 import akka.util._
 import better.files.File
+import ch.epfl.labos.hurricane.Config.HurricaneConfig.NodeAddress
 import ch.epfl.labos.hurricane._
 import ch.epfl.labos.hurricane.common._
 import com.typesafe.config.ConfigValueFactory
@@ -36,6 +37,12 @@ class HurricaneBackendActor(subDirectory: Option[String]) extends Actor with Act
 
   def receive = {
     case cmd: Command =>
+      val senderId = (sender.path.address.host, sender.path.address.port) match {
+        case (Some(host), Some(port)) => Config.HurricaneConfig.FrontendConfig.NodesConfig.nodes.indexOf(NodeAddress(host, port))
+        case _ => -1
+      }
+      
+
       (bagActor(cmd.bag) ? cmd) pipeTo sender
   }
 
