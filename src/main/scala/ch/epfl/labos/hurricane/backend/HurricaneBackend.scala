@@ -41,7 +41,12 @@ class HurricaneBackendActor(subDirectory: Option[String]) extends Actor with Act
         case (Some(host), Some(port)) => Config.HurricaneConfig.FrontendConfig.NodesConfig.nodes.indexOf(NodeAddress(host, port))
         case _ => -1
       }
-      
+
+      cmd match {
+        case Create(fingerprint, bag) if bag.id.startsWith("work_") =>
+          bags += bag -> context.actorOf(HurricaneWorkBag.props(bag, rootFile))
+        case _ => // do nothing
+      }
 
       (bagActor(cmd.bag) ? cmd) pipeTo sender
   }

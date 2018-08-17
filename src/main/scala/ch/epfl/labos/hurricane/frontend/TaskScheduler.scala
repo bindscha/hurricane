@@ -19,6 +19,8 @@ object TaskScheduler {
 
   def props(app: HurricaneApplication): Props = Props(classOf[TaskScheduler], app, ProgressBasedCloningStrategy(0.8))
 
+  case object Restart
+
   case object Tick
 
   case object FetchTask
@@ -122,6 +124,15 @@ class TaskScheduler(app: HurricaneApplication, cloningStrategy: CloningStrategy 
         fetchTask()
       } else {
         log.info("A worker is already running, not fetching a new task just yet...")
+      }
+
+    case Restart =>
+      worker match {
+        case Some(w) =>
+          log.info("Killing tasks and restarting scheduler")
+          context unwatch w
+          w ! Kill
+          self ! MoveOn
       }
 
   }

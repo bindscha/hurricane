@@ -6,7 +6,6 @@ sealed trait HurricaneMessage
 
 sealed trait Command extends HurricaneMessage {
   def bag: Bag
-  def fingerprint: FingerPrint
 }
 
 case class Create(fingerprint: FingerPrint, bag: Bag) extends Command
@@ -25,7 +24,9 @@ case class Flush(fingerprint: FingerPrint, bag: Bag) extends Command
 
 case class Progress(fingerprint: FingerPrint, bag: Bag) extends Command
 
-case class Replay(fingerprint: FingerPrint, bag: Bag) extends Command
+case class Replay(oldWorker: FingerPrint, newWorker: FingerPrint, bag: Bag) extends Command
+
+case class WorkBagUpdate(fingerprint: FingerPrint, bag: Bag, ready: List[(FingerPrint,String)], running: List[(FingerPrint,String)], done: List[(FingerPrint,String)]) extends Command
 
 sealed trait Response extends HurricaneMessage
 
@@ -52,3 +53,4 @@ case class Task(id: String, blueprint: Blueprint) extends MasterResponse
 case class TaskCompleted(id: String) extends MasterCommand
 
 case class PleaseClone(id: String) extends MasterCommand
+
