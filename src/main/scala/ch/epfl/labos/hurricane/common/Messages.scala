@@ -25,7 +25,9 @@ case class Flush(fingerprint: FingerPrint, bag: Bag) extends Command
 
 case class Progress(fingerprint: FingerPrint, bag: Bag) extends Command
 
-case class Replay(fingerprint: FingerPrint, bag: Bag) extends Command
+case class Replay(oldWorker: FingerPrint, newWorker: FingerPrint, bag: Bag) extends Command
+
+case class WorkBagUpdate(fingerprint: FingerPrint, bag: Bag, ready: List[(FingerPrint,String)], running: List[(FingerPrint,String)], done: List[(FingerPrint,String)]) extends Command
 
 sealed trait Response extends HurricaneMessage
 

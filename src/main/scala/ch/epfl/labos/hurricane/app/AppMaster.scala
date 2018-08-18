@@ -7,6 +7,7 @@ import ch.epfl.labos.hurricane.frontend.TaskScheduler
 import io.jvm.uuid._
 
 import scala.collection.mutable
+import scala.concurrent.duration._
 import java.lang.management.ManagementFactory
 
 import com.sun.management.OperatingSystemMXBean
@@ -17,9 +18,15 @@ object AppMaster {
 
   def props(name: String, app: HurricaneApplication, appConf: AppConf, restartPhase: Option[Int]): Props = Props(classOf[AppMaster], name, app, appConf, restartPhase)
 
+  private case object CloneWorker
+  private case object KillWorker
+
 }
 
 class AppMaster(name: String, app: HurricaneApplication, appConf: AppConf, restartPhase: Option[Int]) extends Actor with ActorLogging {
+
+  import AppMaster._
+  import context.dispatcher
 
   val appDescription: Seq[Map[String, Blueprint]] = restartPhase match {
     case Some(i) => app.blueprints(appConf).drop(i).map(_.map(p => UUID.randomString -> p).toMap)
@@ -40,8 +47,18 @@ class AppMaster(name: String, app: HurricaneApplication, appConf: AppConf, resta
 
   val osBean = ManagementFactory.getPlatformMXBean(classOf[OperatingSystemMXBean])
 
+  // Simulation
+  var clonedTask = ""
+  var scheduler: Option[ActorRef] = None
+
   override def preStart(): Unit = {
     super.preStart()
+
+    if(appConf.simulation == 1) {
+      log.info(s"Simulating failure scenario 1...")
+      context.system.scheduler.scheduleOnce(1 seconds, self, CloneWorker)
+      context.system.scheduler.scheduleOnce(10 seconds, self, KillWorker)
+    }
 
     log.info(s"Application ${name} started!")
     gotoNextPhase()
@@ -121,6 +138,39 @@ class AppMaster(name: String, app: HurricaneApplication, appConf: AppConf, resta
         case _ => // ignore
       }
 
+    // Simulation commands
+    case CloneWorker =>
+      workBag.running.headOption orElse workBag.ready.headOption match {
+        case Some(id) =>
+          clonedTask = id
+          self ! PleaseClone(id)
+      }
+
+    case KillWorker =>
+      // Kill clonedTask
+      scheduler foreach (_ ! TaskScheduler.Restart)
+      workBag.running -= clonedTask
+      workBag.ready -= clonedTask
+      val parent = cloneParents getOrElse (clonedTask, clonedTask)
+      val nClones = cloneCounts getOrElseUpdate (parent, 1)
+      clones -= clonedTask
+      cloneParents -= clonedTask
+      cloneCounts += parent -> (cloneCounts(parent) - 1)
+
+      // Recreate worker
+      val newUUID = UUID.randomString
+      blueprint(clonedTask) match {
+        case Some(blueprint) =>
+          clones += newUUID -> (if(blueprint.needsMerge) blueprint.copy(outputs = blueprint.outputs.map(b => b.copy(id = b.id + s".clone$nClones"))) else blueprint)
+          cloneParents += newUUID -> parent
+          cloneCounts += parent -> (cloneCounts(parent) + 1)
+          workBag.ready += newUUID
+
+          // Replaying
+          Config.HurricaneConfig.BackendConfig.NodesConfig.backendRefs foreach { ref =>
+            ref ! Replay(clonedTask, newUUID, blueprint.inputs.head)
+          }
+      }
   }
 
   def gotoNextPhase(): Unit = {
@@ -155,8 +205,3 @@ class AppMaster(name: String, app: HurricaneApplication, appConf: AppConf, resta
     (appDescription(currentPhase) get id) orElse (clones get id)
 
 }
-
-case class WorkBag(
-  ready: mutable.Set[String] = mutable.Set.empty,
-  running: mutable.Set[String] = mutable.Set.empty,
-  done: mutable.Set[String] = mutable.Set.empty)

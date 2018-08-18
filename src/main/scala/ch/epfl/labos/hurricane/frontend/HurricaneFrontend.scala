@@ -16,6 +16,7 @@ class FrontendConf(arguments: Seq[String]) extends ScallopConf(arguments) {
   val hashprops = props[String]('H')
   val benchmark = trailArg[String]()
   val restartPhase = opt[Int](default = Some(0))
+  val simulation = opt[Int](default = Some(0))
   verify()
 }
 

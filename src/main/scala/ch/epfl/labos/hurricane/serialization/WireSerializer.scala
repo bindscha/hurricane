@@ -48,7 +48,7 @@ class WireSerializer extends Serializer {
   // "toBinary" serializes the given object to an Array of Bytes
   def toBinary(obj: AnyRef): Array[Byte] = obj match {
     case Create(fingerprint, bag) =>
-      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH))
+      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + 2 * ID_LENGTH))
       buf.put(CREATE_COMMAND.getBytes)
       buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
@@ -59,14 +59,14 @@ class WireSerializer extends Serializer {
       // XXX: not fingerprinting chunk
       chunk.array
     case Fill(fingerprint, bag, count) =>
-      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH + INT_LENGTH))
+      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + 2 * ID_LENGTH + INT_LENGTH))
       buf.put(FILL_COMMAND.getBytes)
       buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
       buf.putInt(COMMAND_LENGTH + ID_LENGTH, count)
       buf.array
     case SeekAndFill(fingerprint, bag, offset, count) =>
-      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH + INT_LENGTH + INT_LENGTH))
+      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + 2 * ID_LENGTH + INT_LENGTH + INT_LENGTH))
       buf.put(FILL_COMMAND.getBytes)
       buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
@@ -74,33 +74,35 @@ class WireSerializer extends Serializer {
       buf.putInt(COMMAND_LENGTH + ID_LENGTH + INT_LENGTH, count)
       buf.array
     case Flush(fingerprint, bag) =>
-      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH))
+      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + 2 * ID_LENGTH))
       buf.put(FLUSH_COMMAND.getBytes)
       buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
       buf.array
     case Trunc(fingerprint, bag) =>
-      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH))
+      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + 2 * ID_LENGTH))
       buf.put(TRUNC_COMMAND.getBytes)
       buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
       buf.array
     case Rewind(fingerprint, bag) =>
-      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH))
+      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + 2 * ID_LENGTH))
       buf.put(REWIND_COMMAND.getBytes)
       buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
       buf.array
     case Progress(fingerprint, bag) =>
-      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH))
+      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + 2 * ID_LENGTH))
       buf.put(PROGRESS_COMMAND.getBytes)
       buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
       buf.array
-    case Replay(fingerprint, bag) =>
-      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + ID_LENGTH + ID_LENGTH))
+
+    case Replay(oldWorker, newWorker, bag) =>
+      val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + 3 * ID_LENGTH + ID_LENGTH))
       buf.put(REPLAY_COMMAND.getBytes)
-      buf.put(fingerprint.getBytes)
+      buf.put(oldWorker.getBytes)
+      buf.put(newWorker.getBytes)
       buf.put(bag.id.getBytes)
       buf.array
 
@@ -187,11 +189,13 @@ class WireSerializer extends Serializer {
         case PROGRESS_RESPONSE =>
           ProgressReport(buf.getDouble(COMMAND_LENGTH), buf.getLong(COMMAND_LENGTH + DOUBLE_LENGTH))
         case REPLAY_COMMAND =>
-          val fingerprintBytes = new Array[Byte](ID_LENGTH)
-          buf.get(fingerprintBytes)
+          val oldWorkerBytes = new Array[Byte](ID_LENGTH)
+          buf.get(oldWorkerBytes)
+          val newWorkerBytes = new Array[Byte](ID_LENGTH)
+          buf.get(newWorkerBytes)
           val bagBytes = new Array[Byte](ID_LENGTH)
           buf.get(bagBytes)
-          Replay(new String(fingerprintBytes).trim, Bag(new String(bagBytes).trim))
+          Replay(new String(oldWorkerBytes).trim, new String(newWorkerBytes).trim, Bag(new String(bagBytes).trim))
 
         case ACK_RESPONSE => Ack
         case NACK_RESPONSE => Nack
