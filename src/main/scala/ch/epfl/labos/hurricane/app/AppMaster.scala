@@ -87,9 +87,22 @@ class AppMaster(name: String, app: HurricaneApplication, appConf: AppConf, resta
         case Some(id) =>
           blueprint(id) match {
             case Some(blueprint) =>
-              sender ! Task(id, blueprint)
-              workBag.running += id
-              workBag.ready -= id
+              val bpid =
+                if(clones contains id) {
+                  (sender.path.address.host, sender.path.address.port) match {
+                    case (Some(host), Some(port)) =>
+                      val node = Config.HurricaneConfig.FrontendConfig.NodesConfig.nodes.find(na => na.hostname == host && na.port == port)
+                      java.util.UUID.nameUUIDFromBytes(node.toString.getBytes).toString
+                    case _ =>
+                      id // failsafe
+                  }
+                } else {
+                  id
+                }
+              sender ! Task(bpid, blueprint)
+              workBag.running += bpid
+              workBag.ready -= bpid
+
             case _ => // ignore
           }
 
