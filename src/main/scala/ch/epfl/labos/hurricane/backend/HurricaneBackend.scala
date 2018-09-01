@@ -14,15 +14,20 @@ import scala.collection.mutable.{Map => MMap}
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
+//twitter
+import com.twitter.zk.ZkClient
+
+
+
 object HurricaneBackendActor {
 
   val name: String = "master"
 
-  def props(subDirectory: Option[String]): Props = Props(classOf[HurricaneBackendActor], subDirectory)
+  def props(host: Option[String], subDirectory: Option[String]): Props = Props(classOf[HurricaneBackendActor], host, subDirectory)
 
 }
 
-class HurricaneBackendActor(subDirectory: Option[String]) extends Actor with ActorLogging {
+class HurricaneBackendActor(host: Option[String], subDirectory: Option[String]) extends Actor with ActorLogging {
 
   import context.dispatcher
 
@@ -32,6 +37,16 @@ class HurricaneBackendActor(subDirectory: Option[String]) extends Actor with Act
     case Some(sd) => File(Config.HurricaneConfig.BackendConfig.DataConfig.dataDirectory.getAbsolutePath) / sd
     case _ => File(Config.HurricaneConfig.BackendConfig.DataConfig.dataDirectory.getAbsolutePath)
   }
+
+  //zookeeper client
+  implicit val timer = new com.twitter.util.JavaTimer(true)
+  val connectTimeout = Some(com.twitter.util.Duration.fromSeconds(20))
+  val sessionTimeout = com.twitter.util.Duration.fromSeconds(120)
+  val zkClient = ZkClient("localhost:2181", connectTimeout, sessionTimeout)
+
+  //Example address = 127.0.0.1:2551
+  val address: String = host.getOrElse() + ":" + subDirectory.getOrElse()
+  //println("xinjaguo storage id=" + address)
 
   val bags = MMap.empty[Bag, ActorRef]
 
@@ -48,13 +63,14 @@ class HurricaneBackendActor(subDirectory: Option[String]) extends Actor with Act
         case _ => // do nothing
       }
 
+
       (bagActor(cmd.bag) ? cmd) pipeTo sender
   }
 
   log.info(s"Started backend!")
 
   def bagActor(bag: Bag): ActorRef =
-    bags getOrElseUpdate(bag, context.actorOf(HurricaneIO.props(bag, rootFile)))
+    bags getOrElseUpdate(bag, context.actorOf(HurricaneIO.props(bag, address, zkClient, rootFile)))
 
 }
 
@@ -74,6 +90,7 @@ object HurricaneBackend {
     val config =
       if (arguments.me.supplied) {
         //Config.HurricaneConfig.me = arguments.me()
+        //println("xinjaguo hostname: " + ConfigValueFactory.fromAnyRef(Config.HurricaneConfig.BackendConfig.NodesConfig.nodes(arguments.me()).hostname).)
         Config.HurricaneConfig.BackendConfig.backendConfig
           .withValue("akka.remote.netty.tcp.hostname", ConfigValueFactory.fromAnyRef(Config.HurricaneConfig.BackendConfig.NodesConfig.nodes(arguments.me()).hostname))
           .withValue("akka.remote.netty.tcp.port", ConfigValueFactory.fromAnyRef(Config.HurricaneConfig.BackendConfig.NodesConfig.nodes(arguments.me()).port))
@@ -95,6 +112,13 @@ object HurricaneBackend {
 
     ch.epfl.labos.hurricane.frontend.Statistics.init(system.dispatchers.lookup("hurricane.backend.statistics-dispatcher"))
 
+    val hostname =
+      if (arguments.me.supplied) {
+        Config.HurricaneConfig.BackendConfig.NodesConfig.nodes(arguments.me()).hostname
+      } else {
+        Config.HurricaneConfig.BackendConfig.NodesConfig.localNode.hostname
+      }
+
     val port =
       if (arguments.me.supplied) {
         Config.HurricaneConfig.BackendConfig.NodesConfig.nodes(arguments.me()).port
@@ -104,9 +128,9 @@ object HurricaneBackend {
 
     Config.ModeConfig.mode match {
       case Config.ModeConfig.Dev =>
-        system.actorOf(HurricaneBackendActor.props(Some(port + "")), HurricaneBackendActor.name)
+        system.actorOf(HurricaneBackendActor.props(Some(hostname + ""), Some(port + "")), HurricaneBackendActor.name)
       case Config.ModeConfig.Prod =>
-        system.actorOf(HurricaneBackendActor.props(None), HurricaneBackendActor.name)
+        system.actorOf(HurricaneBackendActor.props(None, None), HurricaneBackendActor.name)
     }
   }
 

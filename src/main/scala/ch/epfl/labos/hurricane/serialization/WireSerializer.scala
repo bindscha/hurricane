@@ -63,15 +63,15 @@ class WireSerializer extends Serializer {
       buf.put(FILL_COMMAND.getBytes)
       buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
-      buf.putInt(COMMAND_LENGTH + ID_LENGTH, count)
+      buf.putInt(COMMAND_LENGTH + ID_LENGTH * 2, count)
       buf.array
     case SeekAndFill(fingerprint, bag, offset, count) =>
       val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + 2 * ID_LENGTH + INT_LENGTH + INT_LENGTH))
       buf.put(FILL_COMMAND.getBytes)
       buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
-      buf.putInt(COMMAND_LENGTH + ID_LENGTH, offset)
-      buf.putInt(COMMAND_LENGTH + ID_LENGTH + INT_LENGTH, count)
+      buf.putInt(COMMAND_LENGTH + ID_LENGTH * 2, offset)
+      buf.putInt(COMMAND_LENGTH + ID_LENGTH * 2 + INT_LENGTH, count)
       buf.array
     case Flush(fingerprint, bag) =>
       val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + 2 * ID_LENGTH))
@@ -97,6 +97,7 @@ class WireSerializer extends Serializer {
       buf.put(fingerprint.getBytes)
       buf.put(bag.id.getBytes)
       buf.array
+
     case Replay(oldWorker, newWorker, bag) =>
       val buf = ByteBuffer.wrap(new Array[Byte](COMMAND_LENGTH + 3 * ID_LENGTH + ID_LENGTH))
       buf.put(REPLAY_COMMAND.getBytes)
@@ -151,15 +152,15 @@ class WireSerializer extends Serializer {
           buf.get(fingerprintBytes)
           val bagBytes = new Array[Byte](ID_LENGTH)
           buf.get(bagBytes)
-          val count = buf.getInt(COMMAND_LENGTH + ID_LENGTH)
+          val count = buf.getInt(COMMAND_LENGTH + ID_LENGTH * 2)
           Fill(new String(fingerprintBytes).trim, Bag(new String(bagBytes).trim), count)
         case SEEK_AND_FILL_COMMAND =>
           val fingerprintBytes = new Array[Byte](ID_LENGTH)
           buf.get(fingerprintBytes)
           val bagBytes = new Array[Byte](ID_LENGTH)
           buf.get(bagBytes)
-          val offset = buf.getInt(COMMAND_LENGTH + ID_LENGTH)
-          val count = buf.getInt(COMMAND_LENGTH + ID_LENGTH + INT_LENGTH)
+          val offset = buf.getInt(COMMAND_LENGTH + ID_LENGTH * 2)
+          val count = buf.getInt(COMMAND_LENGTH + ID_LENGTH * 2 + INT_LENGTH)
           SeekAndFill(new String(fingerprintBytes).trim, Bag(new String(bagBytes).trim), offset, count)
         case FLUSH_COMMAND =>
           val fingerprintBytes = new Array[Byte](ID_LENGTH)
