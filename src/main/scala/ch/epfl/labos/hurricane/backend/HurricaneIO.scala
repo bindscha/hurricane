@@ -2,6 +2,7 @@ package ch.epfl.labos.hurricane.backend
 
 import java.io.{File => _, _}
 import java.nio.ByteBuffer
+
 import akka.actor._
 import better.files.File
 import ch.epfl.labos.hurricane._
@@ -10,6 +11,7 @@ import ch.epfl.labos.hurricane.frontend.Statistics
 import net.smacke.jaydio._
 import com.twitter.zk.ZkClient
 import ch.epfl.labos.hurricane.test.ZK
+import ch.epfl.labos.hurricane.test.ZK.getReference
 import org.apache.zookeeper.KeeperException.{NoNodeException, NodeExistsException}
 
 object HurricaneIO {
@@ -77,120 +79,165 @@ class HurricaneIO(bag: Bag, address: String, zkClient: ZkClient, root: File = Fi
     case Create(fingerprint, file) =>
       // do nothing
     case Fill(fingerprint, file, count) =>
-    //case Fill(workerId, file, count) =>
-      val buffer = ChunkPool.allocate()
-      val fp = inout.getFilePointer
-      val read = withStats(Read) {
-        val ret = inout.read(buffer.array, 0, Config.HurricaneConfig.BackendConfig.DataConfig.chunkSize)
-        ret
-      }
-      if (read >= 0) {
-        //val parentNode = "/" + workerId + "~" + bag.id
-        val parentNode = "/" + fingerprint + "~" + "input"
-        //Create parent node if not exists
-        if (!ZK.checkPathExistExample(zkClient, parentNode)) {
-          try {
-            ZK.createPathExample(zkClient, parentNode, new Array[Byte](0))
-          } catch {
-            case nee: NodeExistsException => "Other storage nodes might create the path at the same time"
-          }
+      //Step1: Read chunk from Replay path if Replay path exists and store the chunk in the Record path
+      val replayPath = "/replay/" + fingerprint + "~" + bag.id + "/" + address
+      if (ZK.checkPathExistExample(zkClient, replayPath)) {
+        println("Read From Replay: " + replayPath)
+        val bytes = ZK.getDataExample(zkClient, replayPath)
+        val buf = ByteBuffer.wrap(bytes)
+        val offset = buf.getLong(0)
+        val newBytes = bytes.slice(8, bytes.length)
+
+        if(newBytes.length >= 8) {
+          //Update the replay path with size - 8 bytes(1 chunk)
+          ZK.setDataExample(zkClient, replayPath, newBytes)
+        }else{
+          //No more offset to read, remove the replay path
+          ZK.deletePathExample(zkClient, replayPath)
         }
 
-        val leafNode = parentNode + "/" + address
-        //Create leaf node if not exists, store file pointer(offset) to the leaf node
-        if (!ZK.checkPathExistExample(zkClient, leafNode)) {
-          val buf = ByteBuffer.wrap(new Array[Byte](8))
-          buf.putLong(fp)
-          ZK.createPathExample(zkClient, leafNode, buf.array)
+        val buffer = ChunkPool.allocate()
+        val fp = inout.getFilePointer
+        val read = withStats(Read) {
+          inout.seek(offset)
+          val ret = inout.read(buffer.array, 0, Config.HurricaneConfig.BackendConfig.DataConfig.chunkSize)
+          //Set back file pointer
+          inout.seek(fp)
+          ret
+        }
+        if (read >= 0) {
+          val parentNode = "/record/" + fingerprint + "~" + bag.id
+          //Create parent node if not exists
+          if (!ZK.checkPathExistExample(zkClient, parentNode)) {
+            try {
+              ZK.createPathExample(zkClient, parentNode, new Array[Byte](0))
+            } catch {
+              case nee: NodeExistsException => "Other storage nodes might create the path at the same time"
+            }
+          }
+
+          val leafNode = parentNode + "/" + address
+          //Create leaf node if not exists, store file pointer(offset) to the leaf node
+          if (!ZK.checkPathExistExample(zkClient, leafNode)) {
+            val buf = ByteBuffer.wrap(new Array[Byte](8))
+            buf.putLong(offset)
+            ZK.createPathExample(zkClient, leafNode, buf.array)
+          } else {
+            //Update file pointer(offset) to the leaf node(needs to be nodefiend)
+            val offsetBuffer = ByteBuffer.wrap(new Array[Byte](8))
+            offsetBuffer.putLong(offset)
+            val bufArray = ZK.getDataExample(zkClient, leafNode) ++ offsetBuffer.array
+            ZK.setDataExample(zkClient, leafNode, bufArray)
+          }
+
+          buffer.chunkSize(read)
+          sender ! Filled(buffer)
         } else {
-          //Update file pointer(offset) to the leaf node(needs to be nodefiend)
-          val offsetBuffer = ByteBuffer.wrap(new Array[Byte](8))
-          offsetBuffer.putLong(fp)
-          val bufArray = ZK.getDataExample(zkClient, leafNode) ++ offsetBuffer.array
-          ZK.setDataExample(zkClient, leafNode, bufArray)
+          sender ! EOF
         }
 
-        /*
-        //test here
-        val bytes = ZK.getDataExample(zkClient, leafNode)
-        println(address + " start")
-        ZK.printOffset(bytes)
-        println(address + " end ")
-        */
+        //Step2: Read chunk from file if Replay path not exists, and store the chunk in the Record path
+      }else{
+        //if replay path not exists, read from file
+        println("Read from file")
+        val fp = inout.getFilePointer
+        val buffer = ChunkPool.allocate()
+        val read = withStats(Read) {
+          val ret = inout.read(buffer.array, 0, Config.HurricaneConfig.BackendConfig.DataConfig.chunkSize)
+          ret
+        }
 
-        buffer.chunkSize(read)
-        sender ! Filled(buffer)
-      } else {
-        sender ! EOF
+        if (read >= 0) {
+          //update offset to zookeeper storage side
+          val parentNode = "/record/" + fingerprint + "~" + bag.id
+          //Create parent node if not exists
+          if (!ZK.checkPathExistExample(zkClient, parentNode)) {
+            try {
+              ZK.createPathExample(zkClient, parentNode, new Array[Byte](0))
+            } catch {
+              case nee: NodeExistsException => "Other storage nodes might create the path at the same time"
+            }
+          }
+
+          val leafNode = parentNode + "/" + address
+          //Create leaf node if not exists, store file pointer(offset) to the leaf node
+          if (!ZK.checkPathExistExample(zkClient, leafNode)) {
+            val buf = ByteBuffer.wrap(new Array[Byte](8))
+            buf.putLong(fp)
+            ZK.createPathExample(zkClient, leafNode, buf.array)
+          } else {
+            //Update file pointer(offset) to the leaf node(needs to be nodefiend)
+            val offsetBuffer = ByteBuffer.wrap(new Array[Byte](8))
+            offsetBuffer.putLong(fp)
+            val bufArray = ZK.getDataExample(zkClient, leafNode) ++ offsetBuffer.array
+            ZK.setDataExample(zkClient, leafNode, bufArray)
+          }
+
+          buffer.chunkSize(read)
+          sender ! Filled(buffer)
+        } else {
+          sender ! EOF
+        }
       }
 
-    case Replay(fingerprint: FingerPrint, bag: Bag) =>
-    //case ReplayFill(failedWorkerId, workerId, file, count) =>
-      val failedWorkerId = ""
-      println("xinjaguo replay starts!")
-      //val failedLeafNode = "/" + failedWorkerId + "~" + bag.id +  "/" + address
-      val failedLeafNode = "/" + failedWorkerId + "~" + "input" +  "/" + address
-      println("xinjaguo failed leaf node: " + failedLeafNode)
-      if(!ZK.checkPathExistExample(zkClient, failedLeafNode)){
-        println("xinjaguo replay find path")
-        val bytes = ZK.getDataExample(zkClient, failedLeafNode)
-        if (bytes.length >= 8) {  //at least 1 offset stored in the leaf node
-          val buffer = ChunkPool.allocate()
-          val fp = inout.getFilePointer
-          val buf = ByteBuffer.wrap(bytes)
-          val offset = buf.getLong(0)
-          val read = withStats(Read) {
-            inout.seek(offset)
-            val ret = inout.read(buffer.array, 0, Config.HurricaneConfig.BackendConfig.DataConfig.chunkSize)
-            inout.seek(fp)
-            ret
+
+    case Replay(oldWorker, newWorker, file) =>
+
+      //Step1:Replace oldWorker by newWorker in the replay path
+      val reference = ZK.getReference(zkClient, "/replay", oldWorker, newWorker, address)
+      for ((oldPath, newPath) <- reference){
+        val bytes = ZK.getDataExample(zkClient, oldPath)
+        //check whether the layer3 path created
+        if(ZK.checkPathExistExample(zkClient, newPath)) {
+          val newBytes = ZK.getDataExample(zkClient, oldPath) ++ bytes
+          ZK.setDataExample(zkClient, newPath, newBytes)
+        } else {
+          //check whether the layer2 path created
+          val index = newPath.lastIndexOf("/")
+          val layer2Path = newPath.substring(0, index)
+          if(!ZK.checkPathExistExample(zkClient, layer2Path)){
+            //create layer2
+            ZK.createPathExample(zkClient, layer2Path, new Array[Byte](0))
           }
-          if(read >= 0){
-            //Delete the offset from failed worker leaf node
-            val newBytes = bytes.slice(8, bytes.length)
-            ZK.setDataExample(zkClient, failedLeafNode, newBytes)
+          //create layer3
+          ZK.createPathExample(zkClient, newPath, bytes)
+        }
+        //delete oldPath
+        ZK.deletePathExample(zkClient, oldPath)
+      }
 
-            //Add the offset to the current worker leaf node
-            //val parentNode = "/" + workerId + "~" + bag.id
-            val parentNode = "/" + fingerprint + "~" + "input"
-            //Create parent node if not exists
-            if(!ZK.checkPathExistExample(zkClient, parentNode)){
-              try {
-                ZK.createPathExample(zkClient, parentNode, new Array[Byte](0))
-              }catch {
-                case nee : NodeExistsException => "Other storage nodes might create the path at the same time"
-              }
+
+      //Step2: Move chunks from oldWorker(Record) to newWorker(Replay)
+      val oldLeafNode = "/record/" + oldWorker + "~" + bag.id + "/" + address
+      if (ZK.checkPathExistExample(zkClient, oldLeafNode)) {
+        //get the offset from old worker of record tree
+        val bytes = ZK.getDataExample(zkClient, oldLeafNode)
+
+        if (bytes.length >= 8) { //at least 1 offset stored in the record
+          val newReplayParentNode = "/replay/" + newWorker + "~" + bag.id
+
+          //Create parent node if not exists
+          if(!ZK.checkPathExistExample(zkClient, newReplayParentNode)) {
+            try {
+              ZK.createPathExample(zkClient, newReplayParentNode, new Array[Byte](0))
+            } catch {
+              case nee: NodeExistsException => "Other storage nodes might create the path at the same time"
             }
-
-            val leafNode = parentNode + "/" + address
-            //Create leaf node if not exists, store file pointer(offset) to the leaf node
-            if(!ZK.checkPathExistExample(zkClient, leafNode)){
-              val buf = ByteBuffer.wrap(new Array[Byte](8))
-              buf.putLong(offset)
-              ZK.createPathExample(zkClient, leafNode, buf.array)
-            }else{
-              //Update file pointer(offset) to the leaf node
-              val offsetBuffer = ByteBuffer.wrap(new Array[Byte](8))
-              offsetBuffer.putLong(offset)
-              val bufArray = ZK.getDataExample(zkClient, leafNode) ++ offsetBuffer.array
-              ZK.setDataExample(zkClient, leafNode, bufArray)
-            }
-
-            buffer.chunkSize(read)
-            sender ! Filled(buffer)
-          }else{
-            sender ! EOF
           }
 
+          val newReplayLeafNode = newReplayParentNode + "/" + address
+          //Create leaf node if not exists, store file pointer(offset) to the leaf node
+          if(!ZK.checkPathExistExample(zkClient, newReplayLeafNode)) {
+            ZK.createPathExample(zkClient, newReplayLeafNode, bytes)
+          }else {
+            val newBytes = ZK.getDataExample(zkClient, newReplayLeafNode) ++ bytes
+            ZK.setDataExample(zkClient, newReplayLeafNode, newBytes)
+          }
 
-
-
+          ZK.deletePathExample(zkClient, oldLeafNode)
         }else{
           // no more data to get
         }
-
-      }else{
-        sender ! EOF
       }
 
     case SeekAndFill(fingerprint, file, offset, count) =>
