@@ -30,6 +30,15 @@ object ZK {
 
     //val childrenPath = "/13adb6eb-33db-4504-8a09-e421fc0567da~input/127.0.0.1:2554"
     //val newPath = "/24adb6ee-33db-4504-8a09-e421fc0567da~input/127.0.0.1:2554"
+
+
+    //val path = "/123e4567-e89b-12d3-a456-426655440000/127.0.0.1:2553"
+    //val path = "/123e4567-e89b-12d3-a456-426655440000"
+    //val path = "/13adb6eb-33db-4504-8a09-e421fc0567da~C:\\\\Users\\\\j84091920\\\\Desktop\\\\input"
+    //val path = "/13adb6eb-33db-4504-8a09-e421fc0567da~input"
+    //val childrenPath = "/13adb6eb-33db-4504-8a09-e421fc0567da~input/127.0.0.1:2554"
+    //val newPath = "/24adb6ee-33db-4504-8a09-e421fc0567da~input/127.0.0.1:2554"
+    //val path = "/test"
     //var version = -1
 
     //val buf = ByteBuffer.wrap(new Array[Byte](24))
@@ -53,8 +62,7 @@ object ZK {
     //val bytes = getDataExample(zkClient, "/worker3_bag1/node2")
     //printOffset(bytes)
 
-
-
+    //createPathExample(zkClient, path, buf.array)
     //version = getDataVersionExample(zkClient, path)
 
     //set data to a existing path
@@ -64,6 +72,10 @@ object ZK {
     //println("path: " + path)
     //val bytes = getDataExample(zkClient, path)
     //printOffset(bytes)
+
+    //val bytes = getDataExample(zkClient, newPath)
+    //printOffset(bytes)
+
 
 
     //println("xinjaguo first: " + first)
@@ -250,7 +262,7 @@ object ZK {
       }
     }
   }
-
+  
   //Single Layer Children(in Hurricane task_id is parent, and storage_node_id is child)
   def getChidrenExample(zkClient : ZkClient, path : String ) : Unit = {
 

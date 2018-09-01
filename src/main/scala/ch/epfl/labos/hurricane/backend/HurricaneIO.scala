@@ -2,7 +2,6 @@ package ch.epfl.labos.hurricane.backend
 
 import java.io.{File => _, _}
 import java.nio.ByteBuffer
-
 import akka.actor._
 import better.files.File
 import ch.epfl.labos.hurricane._
@@ -189,7 +188,7 @@ class HurricaneIO(bag: Bag, address: String, zkClient: ZkClient, root: File = Fi
         val bytes = ZK.getDataExample(zkClient, oldPath)
         //check whether the layer3 path created
         if(ZK.checkPathExistExample(zkClient, newPath)) {
-          val newBytes = ZK.getDataExample(zkClient, oldPath) ++ bytes
+          val newBytes = ZK.getDataExample(zkClient, newPath) ++ bytes
           ZK.setDataExample(zkClient, newPath, newBytes)
         } else {
           //check whether the layer2 path created
